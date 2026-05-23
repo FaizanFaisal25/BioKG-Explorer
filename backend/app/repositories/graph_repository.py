@@ -3,7 +3,18 @@ from typing import Any
 from neo4j import Driver
 
 from backend.app.core.config import Settings
-from backend.app.schemas.graph import GraphEdge, GraphNode, GraphPayload, NodeDetail, SearchResult, ShortestPathResponse
+from backend.app.schemas.graph import (
+    DiseaseCandidateDrugsResponse,
+    DrugCandidate,
+    GraphEdge,
+    GraphNode,
+    GraphPayload,
+    NodeDetail,
+    SearchResult,
+    ShortestPathResponse,
+)
+
+GDS_GRAPH_NAME = "biokg_entity_undirected"
 
 
 def _node_id(primekg_index: int) -> str:
@@ -173,46 +184,275 @@ class GraphRepository:
 
         return GraphPayload(nodes=list(nodes_by_id.values()), edges=edges)
 
-    def shortest_path(self, source_id: int, target_id: int, max_hops: int) -> ShortestPathResponse:
-        max_hops = max(1, min(max_hops, self.settings.max_shortest_path_hops))
-        cypher = f"""
-        MATCH (source:Entity {{primekg_index: $source_id}}),
-              (target:Entity {{primekg_index: $target_id}})
-        MATCH path = shortestPath((source)-[*..{max_hops}]-(target))
+    def shortest_path(self, source_id: int, target_id: int, max_hops: int, k: int = 1) -> ShortestPathResponse:
+        k = max(1, min(k, 10))
+        cypher = """
+        MATCH (source:Entity {primekg_index: $source_id}),
+              (target:Entity {primekg_index: $target_id})
+        CALL gds.shortestPath.yens.stream($graph_name, {
+            sourceNode: source,
+            targetNode: target,
+            k: $k
+        })
+        YIELD index, totalCost, nodeIds
         RETURN
-            [node IN nodes(path) | properties(node)] AS node_props,
-            [rel IN relationships(path) | {{
-                relationship_type: type(rel),
-                properties: properties(rel),
-                source: startNode(rel).primekg_index,
-                target: endNode(rel).primekg_index
-            }}] AS rel_props,
-            length(path) AS hops
+            index,
+            totalCost,
+            [nodeId IN nodeIds | properties(gds.util.asNode(nodeId))] AS node_props,
+            size(nodeIds) - 1 AS hops
+        ORDER BY hops ASC
         """
         with self.driver.session(database=self.database) as session:
-            record = session.run(cypher, source_id=source_id, target_id=target_id).single()
+            self._ensure_gds_graph(session)
+            records = list(session.run(cypher, graph_name=GDS_GRAPH_NAME, source_id=source_id, target_id=target_id, k=k))
+
+        if not records:
+            return ShortestPathResponse(found=False, hops=None, path_count=0, nodes=[], edges=[], paths=[])
+
+        merged_nodes: dict[str, GraphNode] = {}
+        merged_edges: dict[str, GraphEdge] = {}
+        paths: list[GraphPayload] = []
+
+        for record in records:
+            path_nodes = [_node_from_properties(dict(node_props)) for node_props in record["node_props"]]
+            path_edges: list[GraphEdge] = []
+            for source_node, target_node in zip(path_nodes, path_nodes[1:]):
+                original_rel = self._relationship_between(
+                    source_node.primekg_index,
+                    target_node.primekg_index,
+                )
+                rel_label = (
+                    original_rel.get("display_relation")
+                    or original_rel.get("relation")
+                    or original_rel.get("relationship_type")
+                    or "relationship"
+                )
+                edge = GraphEdge(
+                    id=_edge_id(
+                        source_node.primekg_index,
+                        target_node.primekg_index,
+                        original_rel.get("relationship_type") or "GDS_SHORTEST_PATH",
+                        f"path_{record['index']}",
+                    ),
+                    source=source_node.id,
+                    target=target_node.id,
+                    label=f"{rel_label} (shortest path)",
+                    relationship_type=original_rel.get("relationship_type") or "GDS_SHORTEST_PATH",
+                    relation=original_rel.get("relation"),
+                    display_relation=original_rel.get("display_relation"),
+                    properties={
+                        **original_rel.get("properties", {}),
+                        "source": "Neo4j Graph Data Science",
+                        "algorithm": "Yen's k-shortest paths",
+                        "path_index": record["index"],
+                        "total_cost": record["totalCost"],
+                    },
+                )
+                path_edges.append(edge)
+                merged_edges[edge.id] = edge
+
+            for node in path_nodes:
+                merged_nodes[node.id] = node
+            paths.append(GraphPayload(nodes=path_nodes, edges=path_edges))
+
+        return ShortestPathResponse(
+            found=True,
+            hops=records[0]["hops"],
+            path_count=len(paths),
+            nodes=list(merged_nodes.values()),
+            edges=list(merged_edges.values()),
+            paths=paths,
+        )
+
+    def _relationship_between(self, source_index: int, target_index: int) -> dict[str, Any]:
+        cypher = """
+        MATCH (source:Entity {primekg_index: $source_index})-[rel]-(target:Entity {primekg_index: $target_index})
+        RETURN
+            type(rel) AS relationship_type,
+            rel.relation AS relation,
+            rel.display_relation AS display_relation,
+            properties(rel) AS properties
+        LIMIT 1
+        """
+        with self.driver.session(database=self.database) as session:
+            record = session.run(cypher, source_index=source_index, target_index=target_index).single()
 
         if record is None:
-            return ShortestPathResponse(found=False, hops=None, nodes=[], edges=[])
+            return {}
 
-        nodes = [_node_from_properties(dict(node_props)) for node_props in record["node_props"]]
-        edges: list[GraphEdge] = []
-        for rel in record["rel_props"]:
-            rel_properties = dict(rel["properties"])
-            relationship_type = rel["relationship_type"]
-            source = int(rel["source"])
-            target = int(rel["target"])
-            edges.append(
-                GraphEdge(
-                    id=_edge_id(source, target, relationship_type, rel_properties.get("relation")),
-                    source=_node_id(source),
-                    target=_node_id(target),
-                    label=rel_properties.get("display_relation") or rel_properties.get("relation") or relationship_type,
-                    relationship_type=relationship_type,
-                    relation=rel_properties.get("relation"),
-                    display_relation=rel_properties.get("display_relation"),
-                    properties=rel_properties,
-                )
+        return {
+            "relationship_type": record["relationship_type"],
+            "relation": record["relation"],
+            "display_relation": record["display_relation"],
+            "properties": dict(record["properties"]),
+        }
+
+    def _ensure_gds_graph(self, session) -> None:
+        exists_record = session.run(
+            "CALL gds.graph.exists($graph_name) YIELD exists RETURN exists",
+            graph_name=GDS_GRAPH_NAME,
+        ).single()
+        if exists_record and exists_record["exists"]:
+            return
+
+        session.run(
+            """
+            CALL gds.graph.project(
+                $graph_name,
+                'Entity',
+                { ALL_RELATIONSHIPS: { type: '*', orientation: 'UNDIRECTED' } }
+            )
+            YIELD graphName
+            RETURN graphName
+            """,
+            graph_name=GDS_GRAPH_NAME,
+        ).consume()
+
+    def get_disease_candidate_drugs(
+        self,
+        disease_id: int,
+        direct_limit: int = 25,
+        repurposing_limit: int = 25,
+    ) -> DiseaseCandidateDrugsResponse | None:
+        disease = self.get_node(disease_id)
+        if disease is None:
+            return None
+        if disease.properties.get("node_type") != "disease":
+            return DiseaseCandidateDrugsResponse(
+                disease_id=disease.id,
+                disease_name=disease.properties.get("name"),
             )
 
-        return ShortestPathResponse(found=True, hops=record["hops"], nodes=nodes, edges=edges)
+        return DiseaseCandidateDrugsResponse(
+            disease_id=disease.id,
+            disease_name=disease.properties.get("name"),
+            known=self._direct_drug_candidates(disease_id, "indication", "known", direct_limit),
+            off_label=self._direct_drug_candidates(disease_id, "off-label use", "off_label", direct_limit),
+            contraindicated=self._direct_drug_candidates(disease_id, "contraindication", "contraindicated", direct_limit),
+            repurposing=self._repurposing_candidates(disease_id, repurposing_limit),
+        )
+
+    def _direct_drug_candidates(
+        self,
+        disease_id: int,
+        relation: str,
+        category: str,
+        limit: int,
+    ) -> list[DrugCandidate]:
+        cypher = """
+        MATCH (disease:Entity {primekg_index: $disease_id})-[rel]-(drug:Entity {node_type: 'drug'})
+        WHERE rel.relation = $relation
+        RETURN
+            properties(disease) AS disease_props,
+            properties(drug) AS drug_props,
+            type(rel) AS relationship_type,
+            properties(rel) AS relationship_props
+        ORDER BY drug.name
+        LIMIT $limit
+        """
+        with self.driver.session(database=self.database) as session:
+            rows = list(session.run(cypher, disease_id=disease_id, relation=relation, limit=limit))
+
+        candidates: list[DrugCandidate] = []
+        for record in rows:
+            disease_props = dict(record["disease_props"])
+            drug_props = dict(record["drug_props"])
+            rel_props = dict(record["relationship_props"])
+            disease_node = _node_from_properties(disease_props)
+            drug_node = _node_from_properties(drug_props)
+            relationship_type = record["relationship_type"]
+            edge = GraphEdge(
+                id=_edge_id(disease_node.primekg_index, drug_node.primekg_index, relationship_type, rel_props.get("relation")),
+                source=disease_node.id,
+                target=drug_node.id,
+                label=rel_props.get("display_relation") or rel_props.get("relation") or relationship_type,
+                relationship_type=relationship_type,
+                relation=rel_props.get("relation"),
+                display_relation=rel_props.get("display_relation"),
+                properties=rel_props,
+            )
+            candidates.append(
+                DrugCandidate(
+                    id=drug_node.id,
+                    primekg_index=drug_node.primekg_index,
+                    name=drug_node.label,
+                    category=category,
+                    evidence_count=1,
+                    relation=relation,
+                    rationale=f"Direct PrimeKG relationship: {relation}",
+                    graph=GraphPayload(nodes=[disease_node, drug_node], edges=[edge]),
+                )
+            )
+        return candidates
+
+    def _repurposing_candidates(self, disease_id: int, limit: int) -> list[DrugCandidate]:
+        cypher = """
+        MATCH (disease:Entity {primekg_index: $disease_id})-[disease_rel]-(support:Entity)-[drug_rel]-(drug:Entity {node_type: 'drug'})
+        WHERE support.node_type IN ['gene/protein', 'pathway']
+          AND disease_rel.relation IN ['disease_protein', 'pathway_protein']
+          AND drug_rel.relation = 'drug_protein'
+          AND NOT EXISTS {
+            MATCH (disease)-[known_rel]-(drug)
+            WHERE known_rel.relation IN ['indication', 'off-label use', 'contraindication']
+          }
+        WITH
+            disease,
+            drug,
+            collect(DISTINCT support)[0..5] AS support_nodes,
+            count(DISTINCT support) AS evidence_count
+        RETURN
+            properties(disease) AS disease_props,
+            properties(drug) AS drug_props,
+            [node IN support_nodes | properties(node)] AS support_props,
+            evidence_count
+        ORDER BY evidence_count DESC, drug.name
+        LIMIT $limit
+        """
+        with self.driver.session(database=self.database) as session:
+            rows = list(session.run(cypher, disease_id=disease_id, limit=limit))
+
+        candidates: list[DrugCandidate] = []
+        for record in rows:
+            disease_node = _node_from_properties(dict(record["disease_props"]))
+            drug_node = _node_from_properties(dict(record["drug_props"]))
+            support_nodes = [_node_from_properties(dict(node_props)) for node_props in record["support_props"]]
+            edges = [
+                GraphEdge(
+                    id=_edge_id(disease_node.primekg_index, support_node.primekg_index, "REPURPOSING_SUPPORT", "shared_target_or_pathway"),
+                    source=disease_node.id,
+                    target=support_node.id,
+                    label="support",
+                    relationship_type="REPURPOSING_SUPPORT",
+                    relation="shared_target_or_pathway",
+                    display_relation="support",
+                    properties={"source": "computed", "evidence": "disease-support-drug path"},
+                )
+                for support_node in support_nodes
+            ]
+            edges.extend(
+                GraphEdge(
+                    id=_edge_id(support_node.primekg_index, drug_node.primekg_index, "REPURPOSING_SUPPORT", "shared_target_or_pathway"),
+                    source=support_node.id,
+                    target=drug_node.id,
+                    label="support",
+                    relationship_type="REPURPOSING_SUPPORT",
+                    relation="shared_target_or_pathway",
+                    display_relation="support",
+                    properties={"source": "computed", "evidence": "disease-support-drug path"},
+                )
+                for support_node in support_nodes
+            )
+            candidates.append(
+                DrugCandidate(
+                    id=drug_node.id,
+                    primekg_index=drug_node.primekg_index,
+                    name=drug_node.label,
+                    category="repurposing",
+                    evidence_count=record["evidence_count"],
+                    relation="shared_target_or_pathway",
+                    rationale="Candidate connected through shared disease genes/proteins or pathways.",
+                    support_nodes=support_nodes,
+                    graph=GraphPayload(nodes=[disease_node, drug_node, *support_nodes], edges=edges),
+                )
+            )
+        return candidates

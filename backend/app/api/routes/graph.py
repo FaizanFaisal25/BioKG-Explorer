@@ -6,7 +6,14 @@ from neo4j import Driver
 from backend.app.core.config import Settings, get_settings
 from backend.app.db.neo4j import get_neo4j_driver
 from backend.app.repositories.graph_repository import GraphRepository
-from backend.app.schemas.graph import GraphPayload, NodeDetail, SearchResult, ShortestPathRequest, ShortestPathResponse
+from backend.app.schemas.graph import (
+    DiseaseCandidateDrugsResponse,
+    GraphPayload,
+    NodeDetail,
+    SearchResult,
+    ShortestPathRequest,
+    ShortestPathResponse,
+)
 
 router = APIRouter(tags=["graph"])
 
@@ -71,6 +78,23 @@ def get_neighbors(
     )
 
 
+@router.get("/disease/{disease_id}/candidate-drugs", response_model=DiseaseCandidateDrugsResponse)
+def get_disease_candidate_drugs(
+    disease_id: int,
+    direct_limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    repurposing_limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    repository: GraphRepository = Depends(get_graph_repository),
+) -> DiseaseCandidateDrugsResponse:
+    candidates = repository.get_disease_candidate_drugs(
+        disease_id=disease_id,
+        direct_limit=direct_limit,
+        repurposing_limit=repurposing_limit,
+    )
+    if candidates is None:
+        raise HTTPException(status_code=404, detail="Disease not found")
+    return candidates
+
+
 @router.post("/shortest-path", response_model=ShortestPathResponse)
 def shortest_path(
     request: ShortestPathRequest,
@@ -80,4 +104,5 @@ def shortest_path(
         source_id=int(request.sourceNodeId),
         target_id=int(request.targetNodeId),
         max_hops=request.maxHops,
+        k=request.k,
     )

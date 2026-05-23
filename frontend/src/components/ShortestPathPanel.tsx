@@ -4,7 +4,9 @@ interface ShortestPathPanelProps {
   selectedNode: GraphNode | null;
   sourceNode: GraphNode | null;
   targetNode: GraphNode | null;
+  pathCount: number;
   isLoading: boolean;
+  onPathCountChange: (pathCount: number) => void;
   onSetSource: () => void;
   onSetTarget: () => void;
   onFindPath: () => void;
@@ -22,7 +24,9 @@ export function ShortestPathPanel({
   selectedNode,
   sourceNode,
   targetNode,
+  pathCount,
   isLoading,
+  onPathCountChange,
   onSetSource,
   onSetTarget,
   onFindPath,
@@ -50,6 +54,20 @@ export function ShortestPathPanel({
           <dd>{nodeLabel(targetNode)}</dd>
         </div>
       </dl>
+      <label className="path-count-control" htmlFor="path-count">
+        <span>Top-k paths</span>
+        <select
+          id="path-count"
+          value={pathCount}
+          onChange={(event) => onPathCountChange(Number(event.target.value))}
+        >
+          {Array.from({ length: 10 }, (_, index) => index + 1).map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="path-actions">
         <button type="button" disabled={!sourceNode || !targetNode || isLoading} onClick={onFindPath}>
           {isLoading ? "Finding..." : "Find path"}
