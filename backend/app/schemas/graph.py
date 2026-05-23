@@ -44,10 +44,32 @@ class NodeDetail(BaseModel):
     properties: dict[str, Any] = Field(default_factory=dict)
 
 
+class DrugCandidate(BaseModel):
+    id: str
+    primekg_index: int
+    name: str | None = None
+    category: str
+    evidence_count: int = 0
+    relation: str | None = None
+    rationale: str | None = None
+    support_nodes: list[GraphNode] = Field(default_factory=list)
+    graph: GraphPayload = Field(default_factory=GraphPayload)
+
+
+class DiseaseCandidateDrugsResponse(BaseModel):
+    disease_id: str
+    disease_name: str | None = None
+    known: list[DrugCandidate] = Field(default_factory=list)
+    off_label: list[DrugCandidate] = Field(default_factory=list)
+    contraindicated: list[DrugCandidate] = Field(default_factory=list)
+    repurposing: list[DrugCandidate] = Field(default_factory=list)
+
+
 class ShortestPathRequest(BaseModel):
     sourceNodeId: int | str
     targetNodeId: int | str
     maxHops: int = 5
+    k: int = Field(default=1, ge=1, le=10)
 
     @field_validator("sourceNodeId", "targetNodeId")
     @classmethod
@@ -60,3 +82,5 @@ class ShortestPathRequest(BaseModel):
 class ShortestPathResponse(GraphPayload):
     hops: int | None = None
     found: bool = False
+    path_count: int = 0
+    paths: list[GraphPayload] = Field(default_factory=list)

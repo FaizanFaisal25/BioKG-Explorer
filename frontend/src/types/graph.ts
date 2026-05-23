@@ -42,13 +42,37 @@ export interface NodeDetail {
   properties: NodeProperties;
 }
 
+export interface DrugCandidate {
+  id: string;
+  primekg_index: number;
+  name?: string | null;
+  category: "known" | "off_label" | "contraindicated" | "repurposing" | string;
+  evidence_count: number;
+  relation?: string | null;
+  rationale?: string | null;
+  support_nodes: GraphNode[];
+  graph: GraphPayload;
+}
+
+export interface DiseaseCandidateDrugsResponse {
+  disease_id: string;
+  disease_name?: string | null;
+  known: DrugCandidate[];
+  off_label: DrugCandidate[];
+  contraindicated: DrugCandidate[];
+  repurposing: DrugCandidate[];
+}
+
 export interface ShortestPathRequest {
   sourceNodeId: number | string;
   targetNodeId: number | string;
   maxHops?: number;
+  k?: number;
 }
 
 export interface ShortestPathResponse extends GraphPayload {
   hops?: number | null;
   found: boolean;
+  path_count: number;
+  paths: GraphPayload[];
 }

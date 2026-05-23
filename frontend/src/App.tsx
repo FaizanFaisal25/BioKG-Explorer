@@ -1,11 +1,19 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { getNeighbors, getNode, getNodeGraph, getShortestPath } from "./api/graphApi";
+import { getDiseaseCandidateDrugs, getNeighbors, getNode, getNodeGraph, getShortestPath } from "./api/graphApi";
+import { CandidateDrugsPanel } from "./components/CandidateDrugsPanel";
 import { GraphCanvas } from "./components/GraphCanvas";
 import { NodeDetailsPanel } from "./components/NodeDetailsPanel";
 import { SearchBar } from "./components/SearchBar";
 import { ShortestPathPanel } from "./components/ShortestPathPanel";
-import type { GraphEdge, GraphNode, GraphPayload, NodeDetail, SearchResult } from "./types/graph";
+import type {
+  DiseaseCandidateDrugsResponse,
+  GraphEdge,
+  GraphNode,
+  GraphPayload,
+  NodeDetail,
+  SearchResult,
+} from "./types/graph";
 
 function mergePayloads(payloads: GraphPayload[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodeMap = new Map<string, GraphNode>();
@@ -47,8 +55,13 @@ export function App() {
   const [sourceNode, setSourceNode] = useState<GraphNode | null>(null);
   const [targetNode, setTargetNode] = useState<GraphNode | null>(null);
   const [layoutAnchorNodeId, setLayoutAnchorNodeId] = useState<string | null>(null);
+  const [candidateDrugGraph, setCandidateDrugGraph] = useState<GraphPayload | null>(null);
+  const [candidateDrugs, setCandidateDrugs] = useState<DiseaseCandidateDrugsResponse | null>(null);
+  const [isCandidateDrugsLoading, setIsCandidateDrugsLoading] = useState(false);
   const [pathNodeIds, setPathNodeIds] = useState<Set<string>>(new Set());
   const [pathEdgeIds, setPathEdgeIds] = useState<Set<string>>(new Set());
+  const [topKPaths, setTopKPaths] = useState(1);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [status, setStatus] = useState("Search for a biomedical entity to begin.");
   const [isPathLoading, setIsPathLoading] = useState(false);
 
@@ -60,13 +73,48 @@ export function App() {
     if (pathPayload) {
       payloads.push(pathPayload);
     }
+    if (candidateDrugGraph) {
+      payloads.push(candidateDrugGraph);
+    }
     return mergePayloads(payloads);
-  }, [expansions, pathPayload, pinnedNodes]);
+  }, [candidateDrugGraph, expansions, pathPayload, pinnedNodes]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId) ?? null,
     [nodes, selectedNodeId],
   );
+
+  useEffect(() => {
+    if (selectedDetails?.properties.node_type !== "disease") {
+      setCandidateDrugs(null);
+      setIsCandidateDrugsLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsCandidateDrugsLoading(true);
+    getDiseaseCandidateDrugs(selectedDetails.primekg_index)
+      .then((response) => {
+        if (isActive) {
+          setCandidateDrugs(response);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        if (isActive) {
+          setCandidateDrugs(null);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsCandidateDrugsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedDetails]);
 
   const handleSelectSearchNode = async (node: SearchResult) => {
     const searchNode = nodeFromSearchResult(node);
@@ -136,6 +184,7 @@ export function App() {
         sourceNodeId: sourceNode.primekg_index,
         targetNodeId: targetNode.primekg_index,
         maxHops: 5,
+        k: topKPaths,
       });
 
       if (!path.found) {
@@ -150,7 +199,7 @@ export function App() {
       setLayoutAnchorNodeId(sourceNode.id);
       setPathNodeIds(new Set(path.nodes.map((node) => node.id)));
       setPathEdgeIds(new Set(path.edges.map((edge) => edge.id)));
-      setStatus(`Shortest path found with ${path.hops} hops.`);
+      setStatus(`Found ${path.path_count} path${path.path_count === 1 ? "" : "s"}; shortest has ${path.hops} hops.`);
     } catch (error) {
       console.error(error);
       setStatus("Unable to compute shortest path.");
@@ -160,11 +209,22 @@ export function App() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${isDarkMode ? " dark-mode" : ""}`}>
       <header className="app-header">
-        <div>
-          <h1>BioKG Explorer</h1>
-          <p>Interactive biomedical knowledge graph analytics over PrimeKG.</p>
+        <button
+          className="theme-toggle"
+          type="button"
+          onClick={() => setIsDarkMode((currentMode) => !currentMode)}
+          aria-pressed={isDarkMode}
+        >
+          {isDarkMode ? "Light mode" : "Dark mode"}
+        </button>
+        <div className="brand-block">
+          <img className="brand-logo" src="/logo.png" alt="BioKG Explorer logo" />
+          <div>
+            <h1>BioKG Explorer</h1>
+            <p>Interactive biomedical knowledge graph analytics</p>
+          </div>
         </div>
         <span>{status}</span>
       </header>
@@ -175,7 +235,9 @@ export function App() {
           selectedNode={selectedNode}
           sourceNode={sourceNode}
           targetNode={targetNode}
+          pathCount={topKPaths}
           isLoading={isPathLoading}
+          onPathCountChange={setTopKPaths}
           onSetSource={() => selectedNode && setSourceNode(selectedNode)}
           onSetTarget={() => selectedNode && setTargetNode(selectedNode)}
           onFindPath={handleFindPath}
@@ -193,6 +255,7 @@ export function App() {
           edges={edges}
           selectedNodeId={selectedNodeId}
           layoutAnchorNodeId={layoutAnchorNodeId}
+          isDarkMode={isDarkMode}
           pathNodeIds={pathNodeIds}
           pathEdgeIds={pathEdgeIds}
           onNodeClick={handleNodeClick}
@@ -202,6 +265,16 @@ export function App() {
 
       <aside className="right-sidebar">
         <NodeDetailsPanel node={selectedDetails} />
+        <CandidateDrugsPanel
+          selectedNode={selectedDetails}
+          candidates={candidateDrugs}
+          isLoading={isCandidateDrugsLoading}
+          onAddCandidateGraph={(payload, anchorNodeId) => {
+            setCandidateDrugGraph(payload);
+            setLayoutAnchorNodeId(anchorNodeId);
+            setStatus("Added candidate drug evidence to the graph.");
+          }}
+        />
       </aside>
     </main>
   );

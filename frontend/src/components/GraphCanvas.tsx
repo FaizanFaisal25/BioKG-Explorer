@@ -8,6 +8,7 @@ interface GraphCanvasProps {
   edges: GraphEdge[];
   selectedNodeId: string | null;
   layoutAnchorNodeId: string | null;
+  isDarkMode: boolean;
   pathNodeIds: Set<string>;
   pathEdgeIds: Set<string>;
   onNodeClick: (nodeId: string) => void;
@@ -36,6 +37,7 @@ export function GraphCanvas({
   edges,
   selectedNodeId,
   layoutAnchorNodeId,
+  isDarkMode,
   pathNodeIds,
   pathEdgeIds,
   onNodeClick,
@@ -106,7 +108,6 @@ export function GraphCanvas({
         {
           selector: "node.path",
           style: {
-            "background-color": "#facc15",
             "border-color": "#f59e0b",
             "border-width": 4,
             "z-index": 10,
@@ -227,7 +228,8 @@ export function GraphCanvas({
       name: "cose",
       animate: true,
       animationDuration: 650,
-      fit: false,
+      fit: true,
+      padding: 96,
       randomize: false,
       nodeRepulsion: 9000,
       idealEdgeLength: 110,
@@ -237,6 +239,15 @@ export function GraphCanvas({
       if (anchor.nonempty() && !anchorWasLocked) {
         anchor.unlock();
       }
+      cy.animate(
+        {
+          fit: {
+            eles: cy.elements(),
+            padding: 120,
+          },
+        },
+        { duration: 360 },
+      );
     });
     layout.run();
   }, [nodes, edges, layoutAnchorNodeId]);
@@ -254,6 +265,15 @@ export function GraphCanvas({
     pathNodeIds.forEach((id) => cy.getElementById(id).addClass("path"));
     pathEdgeIds.forEach((id) => cy.getElementById(id).addClass("path"));
   }, [selectedNodeId, pathNodeIds, pathEdgeIds, nodes, edges]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) {
+      return;
+    }
+
+    cy.edges().style("color", isDarkMode ? "#ffffff" : "#475569");
+  }, [isDarkMode, edges]);
 
   return <div className="graph-canvas" ref={containerRef} />;
 }

@@ -1,4 +1,5 @@
 import type {
+  DiseaseCandidateDrugsResponse,
   GraphPayload,
   NodeDetail,
   SearchResult,
@@ -52,6 +53,17 @@ export function getNeighbors(
     params.set("relations", options.relations.join(","));
   }
   return requestJson<GraphPayload>(`/node/${nodeId}/neighbors?${params.toString()}`);
+}
+
+export function getDiseaseCandidateDrugs(
+  diseaseId: number | string,
+  options: { directLimit?: number; repurposingLimit?: number } = {},
+): Promise<DiseaseCandidateDrugsResponse> {
+  const params = new URLSearchParams({
+    direct_limit: String(options.directLimit ?? 25),
+    repurposing_limit: String(options.repurposingLimit ?? 25),
+  });
+  return requestJson<DiseaseCandidateDrugsResponse>(`/disease/${diseaseId}/candidate-drugs?${params.toString()}`);
 }
 
 export function getShortestPath(request: ShortestPathRequest): Promise<ShortestPathResponse> {
