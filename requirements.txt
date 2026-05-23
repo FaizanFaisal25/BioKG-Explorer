@@ -6,3 +6,6 @@ duckdb
 neo4j
 python-dotenv
 tqdm
+fastapi
+uvicorn
+pydantic-settings
