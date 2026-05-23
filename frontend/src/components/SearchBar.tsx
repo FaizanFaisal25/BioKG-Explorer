@@ -1,0 +1,79 @@
+import { useEffect, useState } from "react";
+
+import { searchNodes } from "../api/graphApi";
+import type { SearchResult } from "../types/graph";
+
+interface SearchBarProps {
+  onSelectNode: (node: SearchResult) => void;
+}
+
+export function SearchBar({ onSelectNode }: SearchBarProps) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const matches = await searchNodes(trimmed, 12);
+        if (!controller.signal.aborted) {
+          setResults(matches);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error(error);
+          setResults([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [query]);
+
+  return (
+    <section className="panel search-panel">
+      <label htmlFor="node-search">Search PrimeKG nodes</label>
+      <input
+        id="node-search"
+        value={query}
+        placeholder="Try diabetes, insulin, TP53..."
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {isLoading && <p className="hint">Searching...</p>}
+      <div className="search-results">
+        {results.map((node) => (
+          <button
+            className="search-result"
+            key={node.id}
+            type="button"
+            onClick={() => {
+              onSelectNode(node);
+              setQuery(node.name ?? String(node.primekg_index));
+              setResults([]);
+            }}
+          >
+            <span>{node.name}</span>
+            <small>
+              {node.node_type} · {node.node_source} · #{node.primekg_index}
+            </small>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
