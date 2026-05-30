@@ -1,4 +1,5 @@
 import type { DiseaseCandidateDrugsResponse, DrugCandidate, GraphPayload, NodeDetail } from "../types/graph";
+import { AccordionPanel } from "./AccordionPanel";
 
 interface CandidateDrugsPanelProps {
   selectedNode: NodeDetail | null;
@@ -73,8 +74,7 @@ export function CandidateDrugsPanel({
   const isDisease = selectedNode?.properties.node_type === "disease";
 
   return (
-    <section className="panel candidate-panel">
-      <h2>Candidate drugs</h2>
+    <AccordionPanel className="candidate-panel" title="Candidate drugs">
       {!isDisease && <p className="hint">Select a disease node to view drug discovery candidates.</p>}
       {isDisease && isLoading && <p className="hint">Finding disease-linked drug candidates...</p>}
       {isDisease && candidates && (
@@ -107,6 +107,6 @@ export function CandidateDrugsPanel({
           })}
         </div>
       )}
-    </section>
+    </AccordionPanel>
   );
 }

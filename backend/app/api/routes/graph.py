@@ -8,11 +8,19 @@ from backend.app.db.neo4j import get_neo4j_driver
 from backend.app.repositories.graph_repository import GraphRepository
 from backend.app.schemas.graph import (
     DiseaseCandidateDrugsResponse,
+    DiseaseSimilarityResponse,
     GraphPayload,
     NodeDetail,
+    PathExplanationRequest,
+    PathExplanationResponse,
     SearchResult,
     ShortestPathRequest,
     ShortestPathResponse,
+)
+from backend.app.services.path_explainer import (
+    PathExplanationError,
+    PathExplanationNotConfiguredError,
+    explain_path,
 )
 
 router = APIRouter(tags=["graph"])
@@ -23,6 +31,10 @@ def get_graph_repository(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GraphRepository:
     return GraphRepository(driver, settings)
+
+
+def get_app_settings(settings: Annotated[Settings, Depends(get_settings)]) -> Settings:
+    return settings
 
 
 def _parse_csv_filters(value: str | None) -> list[str]:
@@ -95,6 +107,18 @@ def get_disease_candidate_drugs(
     return candidates
 
 
+@router.get("/disease/{disease_id}/similar", response_model=DiseaseSimilarityResponse)
+def get_similar_diseases(
+    disease_id: int,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    repository: GraphRepository = Depends(get_graph_repository),
+) -> DiseaseSimilarityResponse:
+    similar = repository.get_similar_diseases(disease_id=disease_id, limit=limit)
+    if similar is None:
+        raise HTTPException(status_code=404, detail="Disease not found")
+    return similar
+
+
 @router.post("/shortest-path", response_model=ShortestPathResponse)
 def shortest_path(
     request: ShortestPathRequest,
@@ -105,4 +129,34 @@ def shortest_path(
         target_id=int(request.targetNodeId),
         max_hops=request.maxHops,
         k=request.k,
+    )
+
+
+@router.post("/path-explanation", response_model=PathExplanationResponse)
+def explain_shortest_path(
+    request: PathExplanationRequest,
+    settings: Settings = Depends(get_app_settings),
+) -> PathExplanationResponse:
+    explanation_subgraph = request.subgraph or request.path
+    if explanation_subgraph is None or not explanation_subgraph.nodes or not explanation_subgraph.edges:
+        raise HTTPException(status_code=400, detail="A path explanation requires at least one node and one edge.")
+
+    try:
+        result = explain_path(
+            path=request.path or explanation_subgraph,
+            settings=settings,
+            requested_signature=request.pathSignature,
+            paths=request.paths,
+            subgraph=explanation_subgraph,
+            subgraph_context=request.subgraphContext,
+        )
+    except PathExplanationNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except PathExplanationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return PathExplanationResponse(
+        explanation=result.explanation,
+        model=result.model,
+        path_signature=result.path_signature,
     )

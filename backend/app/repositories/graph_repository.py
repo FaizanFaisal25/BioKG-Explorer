@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from neo4j import Driver
@@ -5,16 +6,19 @@ from neo4j import Driver
 from backend.app.core.config import Settings
 from backend.app.schemas.graph import (
     DiseaseCandidateDrugsResponse,
+    DiseaseSimilarityResponse,
     DrugCandidate,
     GraphEdge,
     GraphNode,
     GraphPayload,
     NodeDetail,
     SearchResult,
+    SimilarDisease,
     ShortestPathResponse,
 )
 
 GDS_GRAPH_NAME = "biokg_entity_undirected"
+LUCENE_SPECIAL_CHARS = re.compile(r'([+\-&|!(){}\[\]^"~*?:\\/])')
 
 
 def _node_id(primekg_index: int) -> str:
@@ -26,7 +30,28 @@ def _edge_id(source: int, target: int, relationship_type: str, relation: str | N
     return f"{source}-{target}-{relationship_type}-{relation_part}"
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "iso_format"):
+        return value.iso_format()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _safe_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    return _json_safe(properties)
+
+
 def _node_from_properties(properties: dict[str, Any]) -> GraphNode:
+    properties = _safe_properties(properties)
     primekg_index = int(properties["primekg_index"])
     return GraphNode(
         id=_node_id(primekg_index),
@@ -36,6 +61,12 @@ def _node_from_properties(properties: dict[str, Any]) -> GraphNode:
         node_source=properties.get("node_source"),
         properties=properties,
     )
+
+
+def _prefix_fulltext_query(query: str) -> str:
+    terms = [term for term in query.strip().split() if term]
+    escaped_terms = [LUCENE_SPECIAL_CHARS.sub(r"\\\1", term) for term in terms]
+    return " AND ".join(f"{term}*" for term in escaped_terms)
 
 
 class GraphRepository:
@@ -75,9 +106,21 @@ class GraphRepository:
         """
         with self.driver.session(database=self.database) as session:
             try:
-                rows = list(session.run(cypher, query_text=query, limit=limit))
+                rows = list(session.run(cypher, query_text=_prefix_fulltext_query(query), limit=limit))
             except Exception:
-                rows = list(session.run(fallback_cypher, query_text=query, limit=limit))
+                rows = []
+
+            if len(rows) < limit:
+                seen_indices = {record["primekg_index"] for record in rows}
+                fallback_rows = list(
+                    session.run(
+                        fallback_cypher,
+                        query_text=query,
+                        limit=limit,
+                    )
+                )
+                rows.extend(record for record in fallback_rows if record["primekg_index"] not in seen_indices)
+                rows = rows[:limit]
 
         return [
             SearchResult(
@@ -102,7 +145,7 @@ class GraphRepository:
         if record is None:
             return None
 
-        properties = dict(record["properties"])
+        properties = _safe_properties(dict(record["properties"]))
         primekg_index = int(properties["primekg_index"])
         return NodeDetail(
             id=_node_id(primekg_index),
@@ -154,9 +197,9 @@ class GraphRepository:
         edges: list[GraphEdge] = []
 
         for record in rows:
-            source_props = dict(record["source_props"])
-            target_props = dict(record["target_props"])
-            rel_props = dict(record["relationship_props"])
+            source_props = _safe_properties(dict(record["source_props"]))
+            target_props = _safe_properties(dict(record["target_props"]))
+            rel_props = _safe_properties(dict(record["relationship_props"]))
             relationship_type = record["relationship_type"]
 
             source_node = _node_from_properties(source_props)
@@ -284,7 +327,7 @@ class GraphRepository:
             "relationship_type": record["relationship_type"],
             "relation": record["relation"],
             "display_relation": record["display_relation"],
-            "properties": dict(record["properties"]),
+            "properties": _safe_properties(dict(record["properties"])),
         }
 
     def _ensure_gds_graph(self, session) -> None:
@@ -332,6 +375,114 @@ class GraphRepository:
             repurposing=self._repurposing_candidates(disease_id, repurposing_limit),
         )
 
+    def get_similar_diseases(self, disease_id: int, limit: int = 10) -> DiseaseSimilarityResponse | None:
+        disease = self.get_node(disease_id)
+        if disease is None or disease.properties.get("node_type") != "disease":
+            return None
+
+        cypher = """
+        MATCH (disease:Entity {primekg_index: $disease_id})-[similarity:SIMILAR_DISEASE]-(similar:Entity {node_type: 'disease'})
+        WITH disease, similar, similarity
+        ORDER BY similarity.score DESC, similarity.evidence_count DESC, similar.name
+        LIMIT $limit
+        OPTIONAL MATCH (disease)--(support:Entity)--(similar)
+        WHERE support.node_type IN ['gene/protein', 'pathway', 'effect/phenotype']
+        WITH
+            disease,
+            similar,
+            similarity,
+            collect(DISTINCT support)[0..6] AS support_nodes
+        RETURN
+            properties(disease) AS disease_props,
+            properties(similar) AS similar_props,
+            properties(similarity) AS similarity_props,
+            [node IN support_nodes | properties(node)] AS support_props
+        ORDER BY similarity_props.score DESC, similarity_props.evidence_count DESC, similar_props.name
+        """
+        with self.driver.session(database=self.database) as session:
+            rows = list(session.run(cypher, disease_id=disease_id, limit=limit))
+
+        similar_diseases: list[SimilarDisease] = []
+        for record in rows:
+            disease_node = _node_from_properties(dict(record["disease_props"]))
+            similar_node = _node_from_properties(dict(record["similar_props"]))
+            similarity_props = _safe_properties(dict(record["similarity_props"]))
+            support_nodes = [_node_from_properties(dict(node_props)) for node_props in record["support_props"]]
+            edge = GraphEdge(
+                id=_edge_id(
+                    disease_node.primekg_index,
+                    similar_node.primekg_index,
+                    "SIMILAR_DISEASE",
+                    "disease_similarity",
+                ),
+                source=disease_node.id,
+                target=similar_node.id,
+                label="similar disease",
+                relationship_type="SIMILAR_DISEASE",
+                relation="disease_similarity",
+                display_relation="similar disease",
+                properties=similarity_props,
+            )
+            support_edges = [
+                GraphEdge(
+                    id=_edge_id(
+                        disease_node.primekg_index,
+                        support_node.primekg_index,
+                        "SIMILARITY_SUPPORT",
+                        f"{similar_node.primekg_index}_shared_evidence",
+                    ),
+                    source=disease_node.id,
+                    target=support_node.id,
+                    label="shared evidence",
+                    relationship_type="SIMILARITY_SUPPORT",
+                    relation="shared_evidence",
+                    display_relation="shared evidence",
+                    properties={"source": "computed", "evidence": "disease similarity support"},
+                )
+                for support_node in support_nodes
+            ]
+            support_edges.extend(
+                GraphEdge(
+                    id=_edge_id(
+                        support_node.primekg_index,
+                        similar_node.primekg_index,
+                        "SIMILARITY_SUPPORT",
+                        f"{disease_node.primekg_index}_shared_evidence",
+                    ),
+                    source=support_node.id,
+                    target=similar_node.id,
+                    label="shared evidence",
+                    relationship_type="SIMILARITY_SUPPORT",
+                    relation="shared_evidence",
+                    display_relation="shared evidence",
+                    properties={"source": "computed", "evidence": "disease similarity support"},
+                )
+                for support_node in support_nodes
+            )
+            similar_diseases.append(
+                SimilarDisease(
+                    id=similar_node.id,
+                    primekg_index=similar_node.primekg_index,
+                    name=similar_node.label,
+                    score=float(similarity_props.get("score") or 0.0),
+                    evidence_count=int(similarity_props.get("evidence_count") or 0),
+                    shared_gene_count=int(similarity_props.get("shared_gene_count") or 0),
+                    shared_pathway_count=int(similarity_props.get("shared_pathway_count") or 0),
+                    shared_phenotype_count=int(similarity_props.get("shared_phenotype_count") or 0),
+                    support_nodes=support_nodes,
+                    graph=GraphPayload(
+                        nodes=[disease_node, similar_node, *support_nodes],
+                        edges=[edge, *support_edges],
+                    ),
+                )
+            )
+
+        return DiseaseSimilarityResponse(
+            disease_id=disease.id,
+            disease_name=disease.properties.get("name"),
+            similar=similar_diseases,
+        )
+
     def _direct_drug_candidates(
         self,
         disease_id: int,
@@ -355,9 +506,9 @@ class GraphRepository:
 
         candidates: list[DrugCandidate] = []
         for record in rows:
-            disease_props = dict(record["disease_props"])
-            drug_props = dict(record["drug_props"])
-            rel_props = dict(record["relationship_props"])
+            disease_props = _safe_properties(dict(record["disease_props"]))
+            drug_props = _safe_properties(dict(record["drug_props"]))
+            rel_props = _safe_properties(dict(record["relationship_props"]))
             disease_node = _node_from_properties(disease_props)
             drug_node = _node_from_properties(drug_props)
             relationship_type = record["relationship_type"]

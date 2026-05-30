@@ -1,7 +1,10 @@
 import type {
   DiseaseCandidateDrugsResponse,
+  DiseaseSimilarityResponse,
   GraphPayload,
   NodeDetail,
+  PathExplanationRequest,
+  PathExplanationResponse,
   SearchResult,
   ShortestPathRequest,
   ShortestPathResponse,
@@ -26,9 +29,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function searchNodes(query: string, limit = 10): Promise<SearchResult[]> {
+export function searchNodes(query: string, limit = 10, signal?: AbortSignal): Promise<SearchResult[]> {
   const params = new URLSearchParams({ query, limit: String(limit) });
-  return requestJson<SearchResult[]>(`/search?${params.toString()}`);
+  return requestJson<SearchResult[]>(`/search?${params.toString()}`, { signal });
 }
 
 export function getNode(nodeId: number | string): Promise<NodeDetail> {
@@ -66,8 +69,25 @@ export function getDiseaseCandidateDrugs(
   return requestJson<DiseaseCandidateDrugsResponse>(`/disease/${diseaseId}/candidate-drugs?${params.toString()}`);
 }
 
+export function getSimilarDiseases(
+  diseaseId: number | string,
+  options: { limit?: number } = {},
+): Promise<DiseaseSimilarityResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 10),
+  });
+  return requestJson<DiseaseSimilarityResponse>(`/disease/${diseaseId}/similar?${params.toString()}`);
+}
+
 export function getShortestPath(request: ShortestPathRequest): Promise<ShortestPathResponse> {
   return requestJson<ShortestPathResponse>("/shortest-path", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function explainPath(request: PathExplanationRequest): Promise<PathExplanationResponse> {
+  return requestJson<PathExplanationResponse>("/path-explanation", {
     method: "POST",
     body: JSON.stringify(request),
   });

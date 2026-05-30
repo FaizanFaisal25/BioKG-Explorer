@@ -63,6 +63,25 @@ export interface DiseaseCandidateDrugsResponse {
   repurposing: DrugCandidate[];
 }
 
+export interface SimilarDisease {
+  id: string;
+  primekg_index: number;
+  name?: string | null;
+  score: number;
+  evidence_count: number;
+  shared_gene_count: number;
+  shared_pathway_count: number;
+  shared_phenotype_count: number;
+  support_nodes: GraphNode[];
+  graph: GraphPayload;
+}
+
+export interface DiseaseSimilarityResponse {
+  disease_id: string;
+  disease_name?: string | null;
+  similar: SimilarDisease[];
+}
+
 export interface ShortestPathRequest {
   sourceNodeId: number | string;
   targetNodeId: number | string;
@@ -75,4 +94,21 @@ export interface ShortestPathResponse extends GraphPayload {
   found: boolean;
   path_count: number;
   paths: GraphPayload[];
+}
+
+export interface PathExplanationRequest {
+  path?: GraphPayload | null;
+  subgraph?: GraphPayload | null;
+  paths?: GraphPayload[];
+  subgraphContext?: Record<string, unknown>;
+  sourceNodeId?: number | string | null;
+  targetNodeId?: number | string | null;
+  pathIndex?: number | null;
+  pathSignature?: string | null;
+}
+
+export interface PathExplanationResponse {
+  explanation: string;
+  model: string;
+  path_signature: string;
 }
