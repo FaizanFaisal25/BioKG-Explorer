@@ -1,4 +1,6 @@
-import type { GraphNode } from "../types/graph";
+import type { GraphNode, PathExplanationResponse } from "../types/graph";
+import { AccordionPanel } from "./AccordionPanel";
+import { PathExplanationPanel } from "./PathExplanationPanel";
 
 interface ShortestPathPanelProps {
   selectedNode: GraphNode | null;
@@ -11,6 +13,11 @@ interface ShortestPathPanelProps {
   onSetTarget: () => void;
   onFindPath: () => void;
   onClearPath: () => void;
+  canExplainPath: boolean;
+  pathExplanation: PathExplanationResponse | null;
+  pathExplanationError: string | null;
+  isPathExplanationLoading: boolean;
+  onGeneratePathExplanation: () => void;
 }
 
 function nodeLabel(node: GraphNode | null): string {
@@ -31,10 +38,14 @@ export function ShortestPathPanel({
   onSetTarget,
   onFindPath,
   onClearPath,
+  canExplainPath,
+  pathExplanation,
+  pathExplanationError,
+  isPathExplanationLoading,
+  onGeneratePathExplanation,
 }: ShortestPathPanelProps) {
   return (
-    <section className="panel path-panel">
-      <h2>Shortest path</h2>
+    <AccordionPanel className="path-panel" title="Shortest path">
       <p className="hint">Click a graph node, assign it as source or target, then compute a bounded shortest path.</p>
       <div className="path-actions">
         <button type="button" disabled={!selectedNode} onClick={onSetSource}>
@@ -76,6 +87,13 @@ export function ShortestPathPanel({
           Clear path
         </button>
       </div>
-    </section>
+      <PathExplanationPanel
+        canExplain={canExplainPath}
+        explanation={pathExplanation}
+        error={pathExplanationError}
+        isLoading={isPathExplanationLoading}
+        onGenerate={onGeneratePathExplanation}
+      />
+    </AccordionPanel>
   );
 }

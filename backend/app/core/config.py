@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     max_neighbor_limit: int = 500
     default_shortest_path_max_hops: int = 5
     max_shortest_path_hops: int = 10
+    gemini_api_key: str | None = None
+    google_api_key: str | None = None
+    gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_max_output_tokens: int = 700
+    gemini_temperature: float = 0.25
 
     model_config = SettingsConfigDict(
         env_file=(".env", "backend/.env"),

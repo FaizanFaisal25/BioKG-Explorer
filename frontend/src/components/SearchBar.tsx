@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { searchNodes } from "../api/graphApi";
 import type { SearchResult } from "../types/graph";
+import { AccordionPanel } from "./AccordionPanel";
 
 interface SearchBarProps {
   onSelectNode: (node: SearchResult) => void;
@@ -11,11 +12,16 @@ export function SearchBar({ onSelectNode }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const latestRequestId = useRef(0);
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < 2) {
+    const requestId = latestRequestId.current + 1;
+    latestRequestId.current = requestId;
+
+    if (trimmed.length < 1) {
       setResults([]);
+      setIsLoading(false);
       return;
     }
 
@@ -23,21 +29,21 @@ export function SearchBar({ onSelectNode }: SearchBarProps) {
     const timeout = window.setTimeout(async () => {
       setIsLoading(true);
       try {
-        const matches = await searchNodes(trimmed, 12);
-        if (!controller.signal.aborted) {
+        const matches = await searchNodes(trimmed, 12, controller.signal);
+        if (!controller.signal.aborted && latestRequestId.current === requestId) {
           setResults(matches);
         }
       } catch (error) {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && latestRequestId.current === requestId) {
           console.error(error);
           setResults([]);
         }
       } finally {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && latestRequestId.current === requestId) {
           setIsLoading(false);
         }
       }
-    }, 250);
+    }, 90);
 
     return () => {
       controller.abort();
@@ -46,8 +52,8 @@ export function SearchBar({ onSelectNode }: SearchBarProps) {
   }, [query]);
 
   return (
-    <section className="panel search-panel">
-      <label htmlFor="node-search">Search PrimeKG nodes</label>
+    <AccordionPanel className="search-panel" title="Search PrimeKG nodes" defaultExpanded>
+      <label htmlFor="node-search">Node name</label>
       <input
         id="node-search"
         value={query}
@@ -74,6 +80,6 @@ export function SearchBar({ onSelectNode }: SearchBarProps) {
           </button>
         ))}
       </div>
-    </section>
+    </AccordionPanel>
   );
 }

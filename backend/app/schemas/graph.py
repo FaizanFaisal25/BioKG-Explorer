@@ -65,6 +65,25 @@ class DiseaseCandidateDrugsResponse(BaseModel):
     repurposing: list[DrugCandidate] = Field(default_factory=list)
 
 
+class SimilarDisease(BaseModel):
+    id: str
+    primekg_index: int
+    name: str | None = None
+    score: float = 0.0
+    evidence_count: int = 0
+    shared_gene_count: int = 0
+    shared_pathway_count: int = 0
+    shared_phenotype_count: int = 0
+    support_nodes: list[GraphNode] = Field(default_factory=list)
+    graph: GraphPayload = Field(default_factory=GraphPayload)
+
+
+class DiseaseSimilarityResponse(BaseModel):
+    disease_id: str
+    disease_name: str | None = None
+    similar: list[SimilarDisease] = Field(default_factory=list)
+
+
 class ShortestPathRequest(BaseModel):
     sourceNodeId: int | str
     targetNodeId: int | str
@@ -84,3 +103,20 @@ class ShortestPathResponse(GraphPayload):
     found: bool = False
     path_count: int = 0
     paths: list[GraphPayload] = Field(default_factory=list)
+
+
+class PathExplanationRequest(BaseModel):
+    path: GraphPayload | None = None
+    subgraph: GraphPayload | None = None
+    paths: list[GraphPayload] = Field(default_factory=list)
+    subgraphContext: dict[str, Any] = Field(default_factory=dict)
+    sourceNodeId: int | str | None = None
+    targetNodeId: int | str | None = None
+    pathIndex: int | None = None
+    pathSignature: str | None = None
+
+
+class PathExplanationResponse(BaseModel):
+    explanation: str
+    model: str
+    path_signature: str

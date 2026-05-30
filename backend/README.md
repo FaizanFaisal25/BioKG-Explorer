@@ -22,6 +22,8 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your-password
 NEO4J_DATABASE=neo4j
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
 ## MVP Endpoints
@@ -32,3 +34,4 @@ NEO4J_DATABASE=neo4j
 - `GET /api/v1/node/{id}/graph`
 - `GET /api/v1/node/{id}/neighbors`
 - `POST /api/v1/shortest-path`
+- `POST /api/v1/path-explanation`
