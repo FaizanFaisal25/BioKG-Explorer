@@ -368,6 +368,86 @@ body.is-resizing-sidebar {
   z-index: 1;
 }
 
+.d3-graph-canvas {
+  overflow: hidden;
+}
+
+.d3-graph-svg {
+  display: block;
+  height: 100%;
+  touch-action: none;
+  width: 100%;
+}
+
+.d3-edge {
+  opacity: 0.72;
+  stroke: #94a3b8;
+  stroke-linecap: round;
+  stroke-width: 1.4;
+  transition:
+    opacity 180ms ease,
+    stroke 180ms ease,
+    stroke-width 180ms ease;
+}
+
+.d3-edge.path {
+  opacity: 1;
+  stroke: #f59e0b;
+  stroke-width: 5;
+}
+
+.d3-edge-label {
+  dominant-baseline: central;
+  font-size: 8px;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: rgba(255, 255, 255, 0.82);
+  stroke-width: 2px;
+  text-anchor: middle;
+}
+
+.dark-mode .d3-edge-label {
+  stroke: rgba(0, 0, 0, 0.72);
+}
+
+.d3-node {
+  cursor: grab;
+}
+
+.d3-node:active {
+  cursor: grabbing;
+}
+
+.d3-node circle {
+  stroke: #ffffff;
+  stroke-width: 0;
+  transition:
+    r 180ms ease,
+    stroke 180ms ease,
+    stroke-width 180ms ease;
+}
+
+.d3-node.selected circle {
+  stroke: #111827;
+  stroke-width: 4;
+}
+
+.d3-node.path circle {
+  stroke: #f59e0b;
+  stroke-width: 4;
+}
+
+.d3-node text {
+  dominant-baseline: central;
+  fill: #0f172a;
+  font-size: 10px;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: #ffffff;
+  stroke-width: 2px;
+  text-anchor: middle;
+}
+
 .search-panel label,
 .panel h2 {
   display: block;
