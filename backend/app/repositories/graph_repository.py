@@ -331,11 +331,11 @@ class GraphRepository:
         }
 
     def _ensure_gds_graph(self, session) -> None:
-        exists_record = session.run(
-            "CALL gds.graph.exists($graph_name) YIELD exists RETURN exists",
+        existing = list(session.run(
+            "CALL gds.graph.list($graph_name) YIELD graphName RETURN graphName",
             graph_name=GDS_GRAPH_NAME,
-        ).single()
-        if exists_record and exists_record["exists"]:
+        ))
+        if existing:
             return
 
         session.run(

@@ -44,7 +44,7 @@ interface PositionedLink extends SimulationLinkDatum<PositionedNode> {
   label: string;
 }
 
-const nodeColors: Record<string, string> = {
+export const nodeColors: Record<string, string> = {
   disease: "#ef4444",
   drug: "#2563eb",
   "gene/protein": "#16a34a",
@@ -55,6 +55,19 @@ const nodeColors: Record<string, string> = {
   biological_process: "#84cc16",
   molecular_function: "#06b6d4",
   cellular_component: "#eab308",
+};
+
+const nodeLabelMap: Record<string, string> = {
+  disease: "Disease",
+  drug: "Drug",
+  "gene/protein": "Gene / Protein",
+  "effect/phenotype": "Effect / Phenotype",
+  anatomy: "Anatomy",
+  pathway: "Pathway",
+  exposure: "Exposure",
+  biological_process: "Biological Process",
+  molecular_function: "Molecular Function",
+  cellular_component: "Cellular Component",
 };
 
 function colorForNode(node: GraphNode): string {
@@ -70,8 +83,8 @@ function sizeForNode(node: GraphNode): number {
 }
 
 function expandedNodeOffset(index: number, total: number): { x: number; y: number } {
-  const baseRadius = 120;
-  const ringSpacing = 88;
+  const baseRadius = 220;
+  const ringSpacing = 160;
   const baseRingSize = 12;
   let remainingIndex = index;
   let ring = 0;
@@ -135,7 +148,7 @@ function resolveExpansionCollisions(
           distance = 1;
         }
 
-        const minDistance = (radii.get(sourceId) ?? 18) + (radii.get(targetId) ?? 18) + 42;
+        const minDistance = (radii.get(sourceId) ?? 18) + (radii.get(targetId) ?? 18) + 90;
         if (distance >= minDistance) {
           continue;
         }
@@ -168,11 +181,11 @@ function simulateInitialLayout(nodes: PositionedNode[], links: PositionedLink[])
       "link",
       forceLink<PositionedNode, PositionedLink>(simulationLinks)
         .id((node) => node.id)
-        .distance(125)
-        .strength(0.35),
+        .distance(220)
+        .strength(0.3),
     )
-    .force("charge", forceManyBody<PositionedNode>().strength(-260))
-    .force("collide", forceCollide<PositionedNode>().radius((node) => node.radius + 24).strength(0.92))
+    .force("charge", forceManyBody<PositionedNode>().strength(-500))
+    .force("collide", forceCollide<PositionedNode>().radius((node) => node.radius + 55).strength(0.95))
     .stop();
 
   for (let index = 0; index < 160; index += 1) {
@@ -212,6 +225,7 @@ export function D3GraphCanvas({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [transform, setTransform] = useState(zoomIdentity);
   const [renderVersion, setRenderVersion] = useState(0);
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
   useEffect(() => {
     expansionGroupsRef.current = expansionGroups;
@@ -500,7 +514,20 @@ export function D3GraphCanvas({
   );
 
   return (
-    <div className="graph-canvas d3-graph-canvas" ref={containerRef}>
+    <div className="graph-canvas" ref={containerRef}>
+      {nodes.length === 0 && (
+        <div className="graph-empty-state">
+          <div className="graph-empty-state-icon">⬡</div>
+          <p className="graph-empty-state-title">Search for a node to get started</p>
+          <ul className="graph-empty-state-hints">
+            <li>Type a disease, drug, gene, or pathway in the search box</li>
+            <li>Double-click any node to expand its neighbors</li>
+            <li>Click a node to view its details in the right panel</li>
+            <li>Use <strong>Shortest path</strong> to find connections between two nodes</li>
+          </ul>
+        </div>
+      )}
+      <div className="d3-graph-canvas">
       <svg className="d3-graph-svg" ref={svgRef} width={size.width} height={size.height} role="img">
         <g transform={transform.toString()}>
           <g className="d3-edge-layer">
@@ -511,14 +538,25 @@ export function D3GraphCanvas({
               const target = nodePosition(targetId, positionsRef.current);
               const isPath = pathEdgeIds.has(edge.id);
               return (
-                <line
-                  className={`d3-edge${isPath ? " path" : ""}`}
-                  key={edge.id}
-                  x1={source.x}
-                  y1={source.y}
-                  x2={target.x}
-                  y2={target.y}
-                />
+                <g key={edge.id}>
+                  <line
+                    className={`d3-edge${isPath ? " path" : ""}`}
+                    x1={source.x}
+                    y1={source.y}
+                    x2={target.x}
+                    y2={target.y}
+                  />
+                  {/* invisible fat line for easy hover detection */}
+                  <line
+                    className="d3-edge-hover-target"
+                    x1={source.x}
+                    y1={source.y}
+                    x2={target.x}
+                    y2={target.y}
+                    onMouseEnter={() => setHoveredEdgeId(edge.id)}
+                    onMouseLeave={() => setHoveredEdgeId(null)}
+                  />
+                </g>
               );
             })}
           </g>
@@ -526,16 +564,37 @@ export function D3GraphCanvas({
             {renderEdges.map((edge) => {
               const source = nodePosition(linkEndpoint(edge.source), positionsRef.current);
               const target = nodePosition(linkEndpoint(edge.target), positionsRef.current);
-              const angle = (Math.atan2(target.y - source.y, target.x - source.x) * 180) / Math.PI;
+              const mx = (source.x + target.x) / 2;
+              const my = (source.y + target.y) / 2;
+              let angle = (Math.atan2(target.y - source.y, target.x - source.x) * 180) / Math.PI;
+              // keep text right-side up
+              if (angle > 90 || angle < -90) angle += 180;
+              const rawLabel = edge.label ?? "";
+              const label = rawLabel.length > 18 ? rawLabel.slice(0, 17) + "…" : rawLabel;
+              const estWidth = Math.max(label.length * 5.8 + 14, 28);
+              const pillH = 14;
               return (
-                <text
-                  className="d3-edge-label"
-                  fill={isDarkMode ? "#ffffff" : "#475569"}
+                <g
+                  className="d3-edge-label-group"
                   key={edge.id}
-                  transform={`translate(${(source.x + target.x) / 2},${(source.y + target.y) / 2}) rotate(${angle})`}
+                  transform={`translate(${mx},${my}) rotate(${angle})`}
                 >
-                  {edge.label}
-                </text>
+                  <rect
+                    className="d3-edge-label-bg"
+                    x={-estWidth / 2}
+                    y={-pillH / 2}
+                    width={estWidth}
+                    height={pillH}
+                    rx={7}
+                    ry={7}
+                  />
+                  <text
+                    className="d3-edge-label"
+                    fill={isDarkMode ? "#e2e8f0" : "#334155"}
+                  >
+                    {label}
+                  </text>
+                </g>
               );
             })}
           </g>
@@ -559,6 +618,15 @@ export function D3GraphCanvas({
           </g>
         </g>
       </svg>
+      </div>
+      <div className={`graph-legend${isDarkMode ? " dark-mode" : ""}`}>
+        {Object.entries(nodeLabelMap).map(([type, label]) => (
+          <div className="graph-legend-item" key={type}>
+            <span className="graph-legend-dot" style={{ background: nodeColors[type] }} />
+            <span className="graph-legend-label">{label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

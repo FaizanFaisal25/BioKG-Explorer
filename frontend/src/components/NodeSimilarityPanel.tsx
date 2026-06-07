@@ -15,14 +15,11 @@ function SimilarDiseaseRow({
   disease: SimilarDisease;
   onAddSimilarityGraph: (payload: GraphPayload, anchorNodeId: string) => void;
 }) {
+  const score = Number.isFinite(disease.score) ? disease.score.toFixed(3) : "0.000";
   const supportLabel =
     disease.support_nodes.length > 0
-      ? disease.support_nodes
-          .slice(0, 3)
-          .map((node) => node.label ?? node.id)
-          .join(", ")
-      : "No shared evidence sampled";
-  const score = Number.isFinite(disease.score) ? disease.score.toFixed(3) : "0.000";
+      ? disease.support_nodes.slice(0, 3).map((n) => n.label ?? n.id).join(", ")
+      : null;
 
   return (
     <button
@@ -30,12 +27,20 @@ function SimilarDiseaseRow({
       type="button"
       onClick={() => onAddSimilarityGraph(disease.graph, disease.id)}
     >
-      <span>{disease.name ?? `Disease #${disease.primekg_index}`}</span>
-      <small>
-        Score: {score} · Evidence: {disease.evidence_count} · Genes: {disease.shared_gene_count} · Pathways:{" "}
-        {disease.shared_pathway_count} · Phenotypes: {disease.shared_phenotype_count}
-      </small>
-      <small>{supportLabel}</small>
+      <span className="candidate-row-name">{disease.name ?? `Disease #${disease.primekg_index}`}</span>
+      <div className="candidate-row-meta">
+        <span className="candidate-chip">Score: {score}</span>
+        {disease.shared_gene_count > 0 && (
+          <span className="candidate-chip">🧬 {disease.shared_gene_count}</span>
+        )}
+        {disease.shared_pathway_count > 0 && (
+          <span className="candidate-chip">⬡ {disease.shared_pathway_count}</span>
+        )}
+        {disease.shared_phenotype_count > 0 && (
+          <span className="candidate-chip">◎ {disease.shared_phenotype_count}</span>
+        )}
+      </div>
+      {supportLabel && <span className="candidate-row-support">{supportLabel}</span>}
     </button>
   );
 }
@@ -49,14 +54,16 @@ export function NodeSimilarityPanel({
   const isDisease = selectedNode?.properties.node_type === "disease";
 
   return (
-    <AccordionPanel className="similarity-panel" title="Similar diseases">
-      {!isDisease && <p className="hint">Select a disease node to view similar diseases.</p>}
+    <AccordionPanel className="similarity-panel" title="Similar diseases" description="Diseases sharing genes, pathways, or phenotypes with the selected node.">
+      {!isDisease && <p className="hint">Select a disease node to find similar diseases.</p>}
       {isDisease && isLoading && <p className="hint">Finding diseases with shared biomedical evidence...</p>}
       {isDisease && similarity && (
         <div className="candidate-sections">
-          <p className="hint">For {similarity.disease_name ?? `disease #${similarity.disease_id}`}</p>
+          <p className="hint candidate-for">
+            Showing results for <strong>{similarity.disease_name ?? `disease #${similarity.disease_id}`}</strong>
+          </p>
           {similarity.similar.length === 0 ? (
-            <p className="hint">No similar diseases have been precomputed yet.</p>
+            <p className="hint">No similar diseases precomputed yet.</p>
           ) : (
             <div className="candidate-list">
               {similarity.similar.map((disease) => (

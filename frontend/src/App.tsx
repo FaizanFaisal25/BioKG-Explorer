@@ -583,7 +583,7 @@ export function App() {
           onPointerDown={(event) => handleSidebarResizeStart("left", event)}
         />
         <SearchBar onSelectNode={handleSelectSearchNode} />
-        <AccordionPanel className="expansion-panel" title="Expansion">
+        <AccordionPanel className="expansion-panel" title="Expansion" description="Double-click a node on the canvas to reveal its direct neighbors.">
           <p className="hint">Double-click a node to show at most this many 1-hop neighbors.</p>
           <label className="path-count-control" htmlFor="expansion-neighbor-limit">
             <span>Max neighbors</span>
@@ -632,6 +632,26 @@ export function App() {
           onNodeClick={handleNodeClick}
           onNodeDoubleClick={handleNodeDoubleClick}
         />
+        <div className={`node-type-legend${isDarkMode ? " dark-mode" : ""}`}>
+          <p className="node-type-legend-title">Node types</p>
+          {[
+            { label: "Disease", color: "#ef4444" },
+            { label: "Drug", color: "#2563eb" },
+            { label: "Gene / Protein", color: "#16a34a" },
+            { label: "Effect / Phenotype", color: "#a855f7" },
+            { label: "Anatomy", color: "#f97316" },
+            { label: "Pathway", color: "#0d9488" },
+            { label: "Exposure", color: "#64748b" },
+            { label: "Biological Process", color: "#84cc16" },
+            { label: "Molecular Function", color: "#06b6d4" },
+            { label: "Cellular Component", color: "#eab308" },
+          ].map(({ label, color }) => (
+            <div className="node-type-legend-item" key={label}>
+              <span className="node-type-legend-dot" style={{ background: color }} />
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
       </section>
 
       <aside className="right-sidebar">

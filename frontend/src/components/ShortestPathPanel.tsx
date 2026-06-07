@@ -45,7 +45,7 @@ export function ShortestPathPanel({
   onGeneratePathExplanation,
 }: ShortestPathPanelProps) {
   return (
-    <AccordionPanel className="path-panel" title="Shortest path">
+    <AccordionPanel className="path-panel" title="Shortest path" description="Find the most direct connection between two nodes in the graph.">
       <p className="hint">Click a graph node, assign it as source or target, then compute a bounded shortest path.</p>
       <div className="path-actions">
         <button type="button" disabled={!selectedNode} onClick={onSetSource}>

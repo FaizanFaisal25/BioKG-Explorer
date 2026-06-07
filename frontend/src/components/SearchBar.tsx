@@ -52,7 +52,7 @@ export function SearchBar({ onSelectNode }: SearchBarProps) {
   }, [query]);
 
   return (
-    <AccordionPanel className="search-panel" title="Search PrimeKG nodes" defaultExpanded>
+    <AccordionPanel className="search-panel" title="Search PrimeKG nodes" description="Find any disease, drug, gene, or pathway in the knowledge graph." defaultExpanded>
       <label htmlFor="node-search">Node name</label>
       <input
         id="node-search"
