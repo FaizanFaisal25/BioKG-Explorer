@@ -2,12 +2,13 @@ import { ReactNode, useId, useState } from "react";
 
 interface AccordionPanelProps {
   title: string;
+  description?: string;
   className?: string;
   defaultExpanded?: boolean;
   children: ReactNode;
 }
 
-export function AccordionPanel({ title, className = "", defaultExpanded = false, children }: AccordionPanelProps) {
+export function AccordionPanel({ title, description, className = "", defaultExpanded = false, children }: AccordionPanelProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const contentId = useId();
 
@@ -20,7 +21,10 @@ export function AccordionPanel({ title, className = "", defaultExpanded = false,
         type="button"
         onClick={() => setIsExpanded((current) => !current)}
       >
-        <h2>{title}</h2>
+        <div className="accordion-header-text">
+          <h2>{title}</h2>
+          {description && <p className="accordion-description">{description}</p>}
+        </div>
         <span className="accordion-chevron" aria-hidden="true">
           ▾
         </span>

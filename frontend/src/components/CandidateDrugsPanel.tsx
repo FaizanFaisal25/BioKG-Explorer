@@ -11,28 +11,12 @@ interface CandidateDrugsPanelProps {
 const sections: Array<{
   key: keyof Pick<DiseaseCandidateDrugsResponse, "known" | "off_label" | "contraindicated" | "repurposing">;
   title: string;
-  description: string;
+  color: string;
 }> = [
-  {
-    key: "known",
-    title: "Approved / known",
-    description: "Direct indication relationships.",
-  },
-  {
-    key: "off_label",
-    title: "Off-label",
-    description: "Direct off-label use relationships.",
-  },
-  {
-    key: "contraindicated",
-    title: "Unsafe / contraindicated",
-    description: "Direct contraindication relationships.",
-  },
-  {
-    key: "repurposing",
-    title: "Repurposing candidates",
-    description: "Computed through shared genes, proteins, or pathways.",
-  },
+  { key: "known",          title: "Approved",       color: "#16a34a" },
+  { key: "off_label",      title: "Off-label",      color: "#2563eb" },
+  { key: "contraindicated",title: "Contraindicated", color: "#ef4444" },
+  { key: "repurposing",    title: "Repurposing",    color: "#a855f7" },
 ];
 
 function CandidateRow({
@@ -44,11 +28,8 @@ function CandidateRow({
 }) {
   const supportLabel =
     candidate.support_nodes.length > 0
-      ? candidate.support_nodes
-          .slice(0, 3)
-          .map((node) => node.label ?? node.id)
-          .join(", ")
-      : candidate.relation;
+      ? candidate.support_nodes.slice(0, 3).map((n) => n.label ?? n.id).join(", ")
+      : null;
 
   return (
     <button
@@ -56,11 +37,11 @@ function CandidateRow({
       type="button"
       onClick={() => onAddCandidateGraph(candidate.graph, candidate.id)}
     >
-      <span>{candidate.name ?? `Drug #${candidate.primekg_index}`}</span>
-      <small>
-        Evidence: {candidate.evidence_count}
-        {supportLabel ? ` · ${supportLabel}` : ""}
-      </small>
+      <span className="candidate-row-name">{candidate.name ?? `Drug #${candidate.primekg_index}`}</span>
+      <div className="candidate-row-meta">
+        <span className="candidate-chip">Evidence: {candidate.evidence_count}</span>
+        {supportLabel && <span className="candidate-chip candidate-chip-muted">{supportLabel}</span>}
+      </div>
     </button>
   );
 }
@@ -74,34 +55,33 @@ export function CandidateDrugsPanel({
   const isDisease = selectedNode?.properties.node_type === "disease";
 
   return (
-    <AccordionPanel className="candidate-panel" title="Candidate drugs">
-      {!isDisease && <p className="hint">Select a disease node to view drug discovery candidates.</p>}
-      {isDisease && isLoading && <p className="hint">Finding disease-linked drug candidates...</p>}
+    <AccordionPanel className="candidate-panel" title="Candidate drugs" description="Drug relationships linked to a selected disease node.">
+      {!isDisease && <p className="hint">Select a disease node to view drug candidates.</p>}
+      {isDisease && isLoading && <p className="hint">Finding drug candidates...</p>}
       {isDisease && candidates && (
         <div className="candidate-sections">
-          <p className="hint">For {candidates.disease_name ?? `disease #${candidates.disease_id}`}</p>
+          <p className="hint candidate-for">
+            Showing results for <strong>{candidates.disease_name ?? `disease #${candidates.disease_id}`}</strong>
+          </p>
           {sections.map((section) => {
             const items = candidates[section.key];
+            if (items.length === 0) return null;
             return (
               <div className="candidate-section" key={section.key}>
                 <div className="candidate-section-header">
+                  <span className="candidate-section-dot" style={{ background: section.color }} />
                   <strong>{section.title}</strong>
-                  <span>{items.length}</span>
+                  <span className="candidate-count">{items.length}</span>
                 </div>
-                <p className="hint">{section.description}</p>
-                {items.length === 0 ? (
-                  <p className="hint">No candidates found.</p>
-                ) : (
-                  <div className="candidate-list">
-                    {items.map((candidate) => (
-                      <CandidateRow
-                        candidate={candidate}
-                        key={`${section.key}-${candidate.id}`}
-                        onAddCandidateGraph={onAddCandidateGraph}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="candidate-list">
+                  {items.map((candidate) => (
+                    <CandidateRow
+                      candidate={candidate}
+                      key={`${section.key}-${candidate.id}`}
+                      onAddCandidateGraph={onAddCandidateGraph}
+                    />
+                  ))}
+                </div>
               </div>
             );
           })}

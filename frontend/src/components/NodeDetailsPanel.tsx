@@ -20,15 +20,29 @@ const preferredFields = [
   "drug_group",
 ];
 
+const fieldLabels: Record<string, string> = {
+  name: "Name",
+  node_type: "Type",
+  node_source: "Source",
+  source_node_id: "Source ID",
+  disease_mondo_id: "MONDO ID",
+  disease_mondo_name: "MONDO Name",
+  disease_group_name_bert: "Disease Group",
+  disease_mondo_definition: "Definition",
+  drug_description: "Description",
+  drug_indication: "Indication",
+  drug_mechanism_of_action: "Mechanism",
+  drug_group: "Drug Group",
+};
+
 const metricFields = [
   { key: "degree", label: "Degree" },
-  { key: "degree_centrality", label: "Degree centrality" },
-  { key: "degree_size", label: "Display size" },
+  { key: "degree_centrality", label: "Centrality" },
 ];
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
-    return "Not available";
+    return "—";
   }
   if (typeof value === "object") {
     return JSON.stringify(value);
@@ -49,40 +63,36 @@ function formatMetric(value: unknown): string {
 export function NodeDetailsPanel({ node }: NodeDetailsPanelProps) {
   if (!node) {
     return (
-      <AccordionPanel className="details-panel" title="Node details">
-        <p className="hint">Select a node to view biomedical metadata.</p>
+      <AccordionPanel className="details-panel" title="Node details" description="Biomedical metadata for the selected node.">
+        <p className="hint">Click any node on the canvas to inspect it.</p>
       </AccordionPanel>
     );
   }
 
   const properties = node.properties;
-  const fields = preferredFields.filter((field) => field in properties);
+  const fields = preferredFields.filter((field) => field in properties && field !== "name");
   const metrics = metricFields.filter((field) => field.key in properties);
 
   return (
-    <AccordionPanel className="details-panel" title={formatValue(properties.name)}>
-      <p className="hint">Labels: {node.labels.join(", ")}</p>
+    <AccordionPanel className="details-panel" title={formatValue(properties.name)} description={`${formatValue(properties.node_type)} · ${formatValue(properties.node_source)}`}>
       {metrics.length > 0 && (
-        <div className="graph-metrics">
-          <strong>Graph metrics</strong>
-          <dl>
-            {metrics.map((field) => (
-              <div key={field.key}>
-                <dt>{field.label}</dt>
-                <dd>{formatMetric(properties[field.key])}</dd>
-              </div>
-            ))}
-          </dl>
+        <div className="metrics-row">
+          {metrics.map((field) => (
+            <div className="metric-chip" key={field.key}>
+              <span className="metric-chip-value">{formatMetric(properties[field.key])}</span>
+              <span className="metric-chip-label">{field.label}</span>
+            </div>
+          ))}
+          <div className="metric-chip">
+            <span className="metric-chip-value">#{node.primekg_index}</span>
+            <span className="metric-chip-label">PrimeKG ID</span>
+          </div>
         </div>
       )}
-      <dl>
-        <div>
-          <dt>PrimeKG Index</dt>
-          <dd>{node.primekg_index}</dd>
-        </div>
+      <dl className="detail-fields">
         {fields.map((field) => (
-          <div key={field}>
-            <dt>{field}</dt>
+          <div className="detail-field" key={field}>
+            <dt>{fieldLabels[field] ?? field}</dt>
             <dd>{formatValue(properties[field])}</dd>
           </div>
         ))}
