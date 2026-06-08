@@ -64,23 +64,40 @@ The ingestion notebooks (`graph-ingestion/`) read these files, preprocess them, 
 | Python | 3.10+ | Backend and ingestion notebooks |
 | Node.js | 18+ | Frontend |
 | Neo4j | 5.x | Graph database (Desktop or Docker) |
-| Neo4j Graph Data Science plugin | 2.x | Required for shortest-path and similarity analytics |
+| Neo4j Graph Data Science plugin | 2.x | **Must be installed on the Neo4j instance** — required for `gds.shortestPath.yens.stream` (top-k shortest paths) and disease similarity analytics |
 | Google Gemini API key | — | Required for LLM path explanations |
 
-### 1. Clone the repository
+### 1. Install and configure Neo4j
+
+Install [Neo4j Desktop](https://neo4j.com/download/) or run Neo4j via Docker. Before starting the application, **install the Neo4j Graph Data Science (GDS) plugin** on your database instance — this is required for the top-k shortest path feature (`gds.shortestPath.yens.stream`) and the disease similarity analytics.
+
+In Neo4j Desktop: open your database → **Plugins** tab → install **Graph Data Science Library**.
+
+Via Docker, add the plugin to your `NEO4J_PLUGINS` environment variable:
+
+```bash
+docker run \
+  -e NEO4J_PLUGINS='["graph-data-science"]' \
+  -e NEO4J_AUTH=neo4j/your-password \
+  -p 7474:7474 -p 7687:7687 \
+  neo4j:5
+```
+
+### 2. Clone the repository
+
 
 ```bash
 git clone https://github.com/<your-username>/BioKG-Explorer.git
 cd BioKG-Explorer
 ```
 
-### 2. Install Python dependencies
+### 3. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment variables
+### 4. Configure environment variables
 
 Create a `.env` file in the project root (or export variables in your shell):
 
@@ -93,7 +110,7 @@ GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-1.5-flash-latest
 ```
 
-### 4. Install frontend dependencies
+### 5. Install frontend dependencies
 
 ```bash
 cd frontend
