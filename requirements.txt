@@ -1,0 +1,12 @@
+pandas
+matplotlib
+jupyter
+ipykernel
+duckdb
+neo4j
+python-dotenv
+tqdm
+fastapi
+uvicorn
+pydantic-settings
+google-genai
